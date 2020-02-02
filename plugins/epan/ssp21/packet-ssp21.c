@@ -29,6 +29,25 @@ proto_register_ssp21(void)
     );
 }
 
+static int
+dissect_ssp21(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree _U_, void *data _U_)
+{
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "SSP21");
+    /* Clear out stuff in the info column */
+    col_clear(pinfo->cinfo,COL_INFO);
+
+    return tvb_captured_length(tvb);
+}
+
+void
+proto_reg_handoff_foo(void)
+{
+    static dissector_handle_t foo_handle;
+
+    foo_handle = create_dissector_handle(dissect_ssp21, proto_ssp21);
+    dissector_add_uint("udp.port", SSP21_UDP_PORT, foo_handle);
+}
+
 /*
  * Editor modelines  -  https://www.wireshark.org/tools/modelines.html
  *
