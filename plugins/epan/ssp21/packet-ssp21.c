@@ -15,6 +15,7 @@
 #include <epan/packet.h>
 
 #include <stdio.h>
+#include <epan/tvbuff-int.h>
 
 #define SSP21_FUNCTION_REQUEST_HANDSHAKE_BEGIN 0
 #define SSP21_FUNCTION_REPLY_HANDSHAKE_BEGIN 1
@@ -36,6 +37,7 @@ static int proto_ssp21 = -1;
 
 // field handles
 static int hf_ssp21_function = -1;
+static int hf_ssp21_version = -1;
 
 // subtree handles
 static gint ett_ssp21 = -1;
@@ -49,6 +51,12 @@ proto_register_ssp21(void)
                     { "Function", "ssp21.function",
                             FT_UINT8, BASE_DEC,
                             VALS(function_names), 0x0,
+                            NULL, HFILL }
+            },
+            { &hf_ssp21_version,
+                    { "Version", "ssp21.version",
+                            FT_UINT16, BASE_DEC,
+                            NULL, 0x0,
                             NULL, HFILL }
             }
     };
@@ -69,9 +77,39 @@ proto_register_ssp21(void)
 }
 
 static int
+dissect_request_handshake_begin(tvbuff_t *tvb, gint offset, proto_tree *tree) {
+
+    // add the version to the tree
+    proto_tree_add_item(tree, hf_ssp21_version, tvb, offset, 2, ENC_BIG_ENDIAN);
+    offset += 2;
+
+    return tvb_captured_length(tvb);
+}
+
+static int
+dissect_reply_handshake_begin(tvbuff_t *tvb) {
+    return tvb_captured_length(tvb);
+}
+
+static int
+dissect_reply_handshake_error(tvbuff_t *tvb) {
+    return tvb_captured_length(tvb);
+}
+
+static int
+dissect_session_data(tvbuff_t *tvb) {
+    return tvb_captured_length(tvb);
+}
+
+static int
 dissect_ssp21(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree _U_, void *data _U_)
 {
+    if(tvb_captured_length(tvb) == 0) {
+        return 0;
+    }
+
     gint offset = 0;
+    guint8 packet_type = tvb_get_guint8(tvb, 0);
 
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "SSP21");
     /* Clear out stuff in the info column */
@@ -85,9 +123,19 @@ dissect_ssp21(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree _U_, void *dat
     offset += 1;
 
     // determine the function code and call function-specific subroutine
-
-
-    return tvb_captured_length(tvb);
+    switch(packet_type) {
+        case(SSP21_FUNCTION_REQUEST_HANDSHAKE_BEGIN):
+            return dissect_request_handshake_begin(tvb, offset, ssp21_tree);
+        case(SSP21_FUNCTION_REPLY_HANDSHAKE_BEGIN):
+            return dissect_reply_handshake_begin(tvb);
+        case(SSP21_FUNCTION_REPLY_HANDSHAKE_ERROR):
+            return dissect_reply_handshake_error(tvb);
+        case(SSP21_FUNCTION_SESSION_DATA):
+            return dissect_session_data(tvb);
+        default:
+            // can't be SSP21
+            return 0;
+    }
 }
 
 void
