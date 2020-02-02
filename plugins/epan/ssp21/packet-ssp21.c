@@ -14,6 +14,8 @@
 
 #include <epan/packet.h>
 
+#include <stdio.h>
+
 
 #define SSP21_UDP_PORT 20001 /* Not IANA registed */
 
@@ -32,6 +34,8 @@ proto_register_ssp21(void)
 static int
 dissect_ssp21(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree _U_, void *data _U_)
 {
+    printf("dissecting SSP21!! \n");
+
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "SSP21");
     /* Clear out stuff in the info column */
     col_clear(pinfo->cinfo,COL_INFO);
@@ -39,13 +43,14 @@ dissect_ssp21(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree _U_, void *dat
     return tvb_captured_length(tvb);
 }
 
-void
-proto_reg_handoff_foo(void)
+void proto_reg_handoff_ssp21(void)
 {
-    static dissector_handle_t foo_handle;
+    static dissector_handle_t ssp21_handle;
 
-    foo_handle = create_dissector_handle(dissect_ssp21, proto_ssp21);
-    dissector_add_uint("udp.port", SSP21_UDP_PORT, foo_handle);
+    ssp21_handle = create_dissector_handle(dissect_ssp21, proto_ssp21);
+    dissector_add_for_decode_as_with_preference("udp.port", ssp21_handle);
+
+    dissector_add_uint("udp.port", SSP21_UDP_PORT, ssp21_handle);
 }
 
 /*
