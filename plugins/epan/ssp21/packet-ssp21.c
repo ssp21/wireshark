@@ -31,7 +31,6 @@ static const value_string function_names[] = {
         { SSP21_FUNCTION_REPLY_HANDSHAKE_BEGIN, "Reply Handshake Begin" },
         { SSP21_FUNCTION_REPLY_HANDSHAKE_ERROR, "Reply Handshake Error" },
         { SSP21_FUNCTION_SESSION_DATA, "Session Data" },
-
 };
 
 static const value_string handshake_ephemeral_names[] = {
@@ -58,6 +57,13 @@ static const value_string session_crypto_mode_names[] = {
         { 1, "AES-256-GCM" },
 };
 
+static const value_string handshake_mode_names[] = {
+        { 0, "Shared Secret" },
+        { 1, "Public Keys" },
+        { 2, "Industrial Certificates" },
+        { 3, "Quantum Key Distribution" },
+};
+
 /// ------- handles -------------------
 
 // protocol handle
@@ -67,6 +73,7 @@ static int proto_ssp21 = -1;
 static int hf_ssp21_function = -1;
 static int hf_ssp21_version = -1;
 
+// crypto suite stuff
 static int hf_ssp21_crypto_suite = -1;
 static int hf_ssp21_handshake_ephemeral = -1;
 static int hf_ssp21_handshake_hash = -1;
@@ -74,10 +81,20 @@ static int hf_ssp21_handshake_kdf = -1;
 static int hf_ssp21_session_nonce_mode = -1;
 static int hf_ssp21_session_crypto_mode = -1;
 
+// session constraint stuff
+static int hf_ssp21_session_constraints = -1;
+static int hf_ssp21_max_nonce = -1;
+static int hf_ssp21_max_session_duration = -1;
+
+static int hf_ssp21_handshake_mode = -1;
+static int hf_ssp21_mode_ephemeral = -1;
+static int hf_ssp21_mode_data = -1;
+
 
 /// ------- subtree handles -------------------
 static gint ett_ssp21 = -1;
 static gint ett_ssp21_crypto_spec = -1;
+static gint ett_ssp21_session_constraints = -1;
 
 void
 proto_register_ssp21(void)
@@ -132,12 +149,49 @@ proto_register_ssp21(void)
                           VALS(session_crypto_mode_names), 0x0,
                           NULL, HFILL }
             },
+            { &hf_ssp21_session_constraints,
+                    { "Session Constraints", "ssp21.constraints",
+                            FT_NONE, BASE_NONE,
+                            NULL, 0x0,
+                            NULL, HFILL }
+            },
+            { &hf_ssp21_max_nonce,
+                    { "Max Nonce", "ssp21.constraints.max_nonce",
+                            FT_UINT8, BASE_DEC,
+                            NULL, 0x0,
+                            NULL, HFILL }
+            },
+            { &hf_ssp21_max_session_duration,
+                    { "Max Session Duration (ms)", "ssp21.constraints.max_session_duration",
+                            FT_UINT16, BASE_DEC,
+                            NULL, 0x0,
+                            NULL, HFILL }
+            },
+            { &hf_ssp21_handshake_mode,
+                    { "Handshake Mode", "ssp21.handshake_mode",
+                            FT_UINT8, BASE_DEC,
+                            VALS(handshake_mode_names), 0x0,
+                            NULL, HFILL }
+            },
+            { &hf_ssp21_mode_ephemeral,
+                    { "Mode Ephemeral", "ssp21.mode_ephemeral",
+                            FT_NONE, BASE_NONE,
+                            NULL, 0x0,
+                            NULL, HFILL }
+            },
+            { &hf_ssp21_mode_data,
+                    { "Mode Ephemeral", "ssp21.mode_ephemeral",
+                            FT_NONE, BASE_NONE,
+                            NULL, 0x0,
+                            NULL, HFILL }
+            },
     };
 
     // subtree array
     static gint *ett[] = {
         &ett_ssp21,
         &ett_ssp21_crypto_spec,
+        &ett_ssp21_session_constraints,
     };
 
     proto_ssp21 = proto_register_protocol (
@@ -174,6 +228,21 @@ dissect_crypto_spec(tvbuff_t *tvb, gint offset, proto_tree *tree) {
     return offset;
 }
 
+static guint
+dissect_session_constraints(tvbuff_t *tvb, gint offset, proto_tree *tree) {
+
+    proto_item *ti = proto_tree_add_item(tree, hf_ssp21_session_constraints, tvb, offset, 6, ENC_NA);
+    proto_tree *subtree = proto_item_add_subtree(ti, ett_ssp21_session_constraints);
+
+    proto_tree_add_item(subtree, hf_ssp21_max_nonce, tvb, offset, 2, ENC_BIG_ENDIAN);
+    offset += 2;
+
+    proto_tree_add_item(subtree, hf_ssp21_max_session_duration, tvb, offset, 4, ENC_BIG_ENDIAN);
+    offset += 4;
+
+    return offset;
+}
+
 static void
 dissect_request_handshake_begin(tvbuff_t *tvb, gint offset, proto_tree *tree) {
 
@@ -182,6 +251,11 @@ dissect_request_handshake_begin(tvbuff_t *tvb, gint offset, proto_tree *tree) {
     offset += 2;
 
     offset = dissect_crypto_spec(tvb, offset, tree);
+    offset = dissect_session_constraints(tvb, offset, tree);
+
+    // handshake mode
+    proto_tree_add_item(tree, hf_ssp21_handshake_mode, tvb, offset, 1, ENC_BIG_ENDIAN);
+    offset += 1;
 }
 
 
