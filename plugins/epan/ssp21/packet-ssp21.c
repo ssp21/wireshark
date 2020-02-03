@@ -86,9 +86,17 @@ static int hf_ssp21_session_constraints = -1;
 static int hf_ssp21_max_nonce = -1;
 static int hf_ssp21_max_session_duration = -1;
 
+// handshake mode stuff
 static int hf_ssp21_handshake_mode = -1;
 static int hf_ssp21_mode_ephemeral = -1;
 static int hf_ssp21_mode_data = -1;
+
+// session data stuff
+static int hf_ssp21_auth_metadata = -1;
+static int hf_ssp21_nonce = -1;
+static int hf_ssp21_valid_until_ms = -1;
+static int hf_ssp21_user_data = -1;
+static int hf_ssp21_auth_tag = -1;
 
 // stuff related to variable length fields
 static int hf_count_of_length_bytes = -1;
@@ -101,6 +109,7 @@ static gint ett_ssp21 = -1;
 static gint ett_ssp21_crypto_spec = -1;
 static gint ett_ssp21_session_constraints = -1;
 static gint ett_ssp21_seq_of_bytes = -1;
+static gint ett_ssp21_auth_metadata = -1;
 
 void
 proto_register_ssp21(void)
@@ -204,10 +213,40 @@ proto_register_ssp21(void)
                           NULL, HFILL }
             },
             { &hf_ssp21_bytes,
-                        { "Bytes", "ssp21.bytes",
+                        { "Value", "ssp21.bytes_value",
                                 FT_BYTES, SEP_COLON,
                           NULL, 0x0,
                           NULL, HFILL }
+            },
+            { &hf_ssp21_auth_metadata,
+                        { "AuthMetadata", "ssp21.auth_metadata",
+                          FT_NONE, BASE_NONE,
+                          NULL, 0x0,
+                          NULL, HFILL }
+            },
+            { &hf_ssp21_nonce,
+                        { "Nonce", "ssp21.nonce",
+                          FT_UINT16, BASE_DEC,
+                          NULL, 0x0,
+                          NULL, HFILL }
+            },
+            { &hf_ssp21_valid_until_ms,
+                        { "Valid Until Ms", "ssp21.valid_until_ms",
+                          FT_UINT16, BASE_DEC,
+                          NULL, 0x0,
+                          NULL, HFILL }
+            },
+            { &hf_ssp21_user_data,
+                        { "User Data", "ssp21.user_data",
+                                FT_NONE, BASE_NONE,
+                                NULL, 0x0,
+                                NULL, HFILL }
+            },
+            { &hf_ssp21_auth_tag,
+                    { "Auth Tag", "ssp21.auth_tag",
+                            FT_NONE, BASE_NONE,
+                            NULL, 0x0,
+                            NULL, HFILL }
             },
     };
 
@@ -217,6 +256,7 @@ proto_register_ssp21(void)
         &ett_ssp21_crypto_spec,
         &ett_ssp21_session_constraints,
         &ett_ssp21_seq_of_bytes,
+        &ett_ssp21_auth_metadata,
     };
 
     proto_ssp21 = proto_register_protocol (
@@ -268,6 +308,21 @@ dissect_session_constraints(tvbuff_t *tvb, gint offset, proto_tree *parent) {
     return offset;
 }
 
+static guint
+dissect_auth_metadata(tvbuff_t *tvb, gint offset, proto_tree *parent) {
+
+    proto_item *ti = proto_tree_add_item(parent, hf_ssp21_auth_metadata, tvb, offset, 6, ENC_NA);
+    proto_tree *tree = proto_item_add_subtree(ti, ett_ssp21_auth_metadata);
+
+    proto_tree_add_item(tree, hf_ssp21_nonce, tvb, offset, 2, ENC_BIG_ENDIAN);
+    offset += 2;
+
+    proto_tree_add_item(tree, hf_ssp21_valid_until_ms, tvb, offset, 4, ENC_BIG_ENDIAN);
+    offset += 4;
+
+    return offset;
+}
+
 static gint
 dissect_seq_of_bytes(tvbuff_t *tvb, gint offset, int hf_field_handle, proto_tree *parent) {
     const gint start = offset;
@@ -281,14 +336,16 @@ dissect_seq_of_bytes(tvbuff_t *tvb, gint offset, int hf_field_handle, proto_tree
     if(!(first_byte & 0x80u)) {
 
         // single byte, so the length is just lower 7-bits
-        const guint length_of_blob = lower_bits;
+        const guint length = lower_bits;
 
-        proto_item *ti = proto_tree_add_item(parent, hf_field_handle, tvb, start, length_of_blob + 1, ENC_NA);
+        proto_item *ti = proto_tree_add_item(parent, hf_field_handle, tvb, start, length + 1, ENC_NA);
         proto_tree *tree = proto_item_add_subtree(ti, ett_ssp21_seq_of_bytes);
 
         proto_tree_add_item(tree, hf_ssp21_length, tvb, start, 1, ENC_BIG_ENDIAN);
-        proto_tree_add_item(tree, hf_ssp21_bytes, tvb, offset, length_of_blob, ENC_NA);
-        offset += length_of_blob;
+        if(length > 0) {
+            proto_tree_add_item(tree, hf_ssp21_bytes, tvb, offset, length, ENC_NA);
+            offset += length;
+        }
         return offset;
     }
 
@@ -307,9 +364,11 @@ dissect_seq_of_bytes(tvbuff_t *tvb, gint offset, int hf_field_handle, proto_tree
             proto_tree_add_item(tree, hf_ssp21_length, tvb, offset, 1, ENC_BIG_ENDIAN);
             offset += 1;
 
-            proto_tree_add_item(tree, hf_ssp21_bytes, tvb, offset, length, ENC_NA);
+            if(length > 0) {
+                proto_tree_add_item(tree, hf_ssp21_bytes, tvb, offset, length, ENC_NA);
+                offset += length;
+            }
 
-            offset += length;
             return offset;
         }
         case(2): {
@@ -324,9 +383,11 @@ dissect_seq_of_bytes(tvbuff_t *tvb, gint offset, int hf_field_handle, proto_tree
             proto_tree_add_item(tree, hf_ssp21_length, tvb, offset, 2, ENC_BIG_ENDIAN);
             offset += 2;
 
-            proto_tree_add_item(tree, hf_ssp21_bytes, tvb, offset, length, ENC_NA);
+            if(length > 0) {
+                proto_tree_add_item(tree, hf_ssp21_bytes, tvb, offset, length, ENC_NA);
+                offset += length;
+            }
 
-            offset += length;
             return offset;
         }
         default:
@@ -335,7 +396,7 @@ dissect_seq_of_bytes(tvbuff_t *tvb, gint offset, int hf_field_handle, proto_tree
     }
 }
 
-static void
+static guint
 dissect_request_handshake_begin(tvbuff_t *tvb, gint offset, proto_tree *tree) {
 
     // add the version to the tree
@@ -351,25 +412,31 @@ dissect_request_handshake_begin(tvbuff_t *tvb, gint offset, proto_tree *tree) {
 
     offset = dissect_seq_of_bytes(tvb, offset, hf_ssp21_mode_ephemeral, tree);
     offset = dissect_seq_of_bytes(tvb, offset, hf_ssp21_mode_data, tree);
+
+    return offset;
 }
 
+static guint
+dissect_reply_handshake_begin(tvbuff_t *tvb, gint offset, proto_tree *tree) {
+    offset = dissect_seq_of_bytes(tvb, offset, hf_ssp21_mode_ephemeral, tree);
+    offset = dissect_seq_of_bytes(tvb, offset, hf_ssp21_mode_data, tree);
+    return offset;
+}
 
 /*
-static void
-dissect_reply_handshake_begin(tvbuff_t *tvb, gint offset, proto_tree *tree) {
-
-}
-
-static void
+static guint
 dissect_reply_handshake_error(tvbuff_t *tvb, gint offset, proto_tree *tree) {
 
 }
+*/
 
-static void
+static guint
 dissect_session_data(tvbuff_t *tvb, gint offset, proto_tree *tree) {
-
+    offset = dissect_auth_metadata(tvb, offset, tree);
+    offset = dissect_seq_of_bytes(tvb, offset, hf_ssp21_user_data, tree);
+    return dissect_seq_of_bytes(tvb, offset, hf_ssp21_auth_tag, tree);
 }
- */
+
 
 static int
 dissect_ssp21(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree _U_, void *data _U_)
@@ -395,22 +462,28 @@ dissect_ssp21(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree _U_, void *dat
     // determine the function code and call function-specific subroutine
     switch(packet_type) {
         case(SSP21_FUNCTION_REQUEST_HANDSHAKE_BEGIN):
-            dissect_request_handshake_begin(tvb, offset, ssp21_tree);
+            offset += dissect_request_handshake_begin(tvb, offset, ssp21_tree);
             break;
-            /*
         case(SSP21_FUNCTION_REPLY_HANDSHAKE_BEGIN):
-            dissect_reply_handshake_begin(tvb);
+            offset += dissect_reply_handshake_begin(tvb, offset, ssp21_tree);
             break;
+
+            /*
         case(SSP21_FUNCTION_REPLY_HANDSHAKE_ERROR):
-            dissect_reply_handshake_error(tvb);
-            break;
-        case(SSP21_FUNCTION_SESSION_DATA):
-            dissect_session_data(tvb);
+            offset += dissect_reply_handshake_error(tvb, offset, ssp21_tree);
             break;
              */
+
+        case(SSP21_FUNCTION_SESSION_DATA):
+            offset += dissect_session_data(tvb, offset, ssp21_tree);
+            break;
+        default:
+            // TODO - ERROR on unknown function
+            break;
+
     }
 
-    return tvb_captured_length(tvb);
+    return offset;
 }
 
 void
