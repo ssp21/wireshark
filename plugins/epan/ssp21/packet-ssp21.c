@@ -89,6 +89,9 @@ static int hf_ssp21_max_session_duration = -1;
 static int hf_ssp21_handshake_mode = -1;
 static int hf_ssp21_mode_ephemeral = -1;
 static int hf_ssp21_mode_data = -1;
+
+// stuff related to variable length fields
+static int hf_count_of_length_bytes = -1;
 static int hf_ssp21_length = -1;
 static int hf_ssp21_bytes = -1;
 
@@ -188,6 +191,12 @@ proto_register_ssp21(void)
                             NULL, 0x0,
                             NULL, HFILL }
             },
+            { &hf_count_of_length_bytes,
+                    { "Count of Length Bytes", "ssp21.count_of_length",
+                            FT_UINT8, BASE_DEC,
+                            NULL, 0x0,
+                            NULL, HFILL }
+            },
             { &hf_ssp21_length,
                         { "Length", "ssp21.length",
                                 FT_UINT32, BASE_DEC,
@@ -265,25 +274,65 @@ dissect_seq_of_bytes(tvbuff_t *tvb, gint offset, int hf_field_handle, proto_tree
 
     // first thing to do is attempt to read the length, b/c we need that to determine other lengths
     const guint8 first_byte = tvb_get_guint8(tvb, offset);
+    const guint8 lower_bits = first_byte & 0x7Fu;
     offset += 1;
 
+    // a single byte length
     if(!(first_byte & 0x80u)) {
 
         // single byte, so the length is just lower 7-bits
-        const guint length_of_blob = first_byte & 0x7Fu;
-
-
-        printf("length: %u \n", length_of_blob);
+        const guint length_of_blob = lower_bits;
 
         proto_item *ti = proto_tree_add_item(parent, hf_field_handle, tvb, start, length_of_blob + 1, ENC_NA);
-        proto_tree *tree = proto_item_add_subtree(ti, ett_ssp21_session_constraints);
+        proto_tree *tree = proto_item_add_subtree(ti, ett_ssp21_seq_of_bytes);
 
         proto_tree_add_item(tree, hf_ssp21_length, tvb, start, 1, ENC_BIG_ENDIAN);
         proto_tree_add_item(tree, hf_ssp21_bytes, tvb, offset, length_of_blob, ENC_NA);
         offset += length_of_blob;
+        return offset;
     }
 
-    return offset;
+    const guint8 count_of_length_bytes = lower_bits;
+
+    switch(count_of_length_bytes) {
+        case(1): {
+            // TODO - ERROR if bad encoding
+            const guint8 length = tvb_get_guint8(tvb, offset);
+
+            proto_item *ti = proto_tree_add_item(parent, hf_field_handle, tvb, start, length + 2, ENC_NA);
+            proto_tree *tree = proto_item_add_subtree(ti, ett_ssp21_seq_of_bytes);
+
+            proto_tree_add_item(tree, hf_count_of_length_bytes, tvb, start, 1, ENC_BIG_ENDIAN);
+
+            proto_tree_add_item(tree, hf_ssp21_length, tvb, offset, 1, ENC_BIG_ENDIAN);
+            offset += 1;
+
+            proto_tree_add_item(tree, hf_ssp21_bytes, tvb, offset, length, ENC_NA);
+
+            offset += length;
+            return offset;
+        }
+        case(2): {
+            // TODO - ERROR if bad encoding
+            const guint16 length = tvb_get_guint16(tvb, offset, ENC_BIG_ENDIAN);
+
+            proto_item *ti = proto_tree_add_item(parent, hf_field_handle, tvb, start, length + 3, ENC_NA);
+            proto_tree *tree = proto_item_add_subtree(ti, ett_ssp21_seq_of_bytes);
+
+            proto_tree_add_item(tree, hf_count_of_length_bytes, tvb, start, 1, ENC_BIG_ENDIAN);
+
+            proto_tree_add_item(tree, hf_ssp21_length, tvb, offset, 2, ENC_BIG_ENDIAN);
+            offset += 2;
+
+            proto_tree_add_item(tree, hf_ssp21_bytes, tvb, offset, length, ENC_NA);
+
+            offset += length;
+            return offset;
+        }
+        default:
+            // TODO - ERROR
+            return offset;
+    }
 }
 
 static void
