@@ -64,6 +64,23 @@ static const value_string handshake_mode_names[] = {
         { 3, "Quantum Key Distribution" },
 };
 
+static const value_string handshake_error_names[] = {
+        {0, "bad message format"},
+        {1, "unsupported version"},
+        {2, "unsupported handshake ephemeral"},
+        {3, "unsupported handshake hash"},
+        {4, "unsupported handshake KDF"},
+        {5, "unsupported session mode"},
+        {6, "unsupported nonce nonce"},
+        {7, "unsupported handshake mode"},
+        {8, "bad certificate format"},
+        {9, "bad certificate chain"},
+        {10, "unsupported certificate feature"},
+        {11, "authentication error"},
+        {12, "no prior handshake begin"},
+        {13, "key not found"},
+};
+
 /// ------- handles -------------------
 
 // protocol handle
@@ -103,6 +120,8 @@ static int hf_count_of_length_bytes = -1;
 static int hf_ssp21_length = -1;
 static int hf_ssp21_bytes = -1;
 
+// handshake error enum
+static int hf_ssp21_handshake_error = -1;
 
 /// ------- subtree handles -------------------
 static gint ett_ssp21 = -1;
@@ -246,6 +265,12 @@ proto_register_ssp21(void)
                     { "Auth Tag", "ssp21.auth_tag",
                             FT_NONE, BASE_NONE,
                             NULL, 0x0,
+                            NULL, HFILL }
+            },
+            { &hf_ssp21_handshake_error,
+                    { "Handshake Error", "ssp21.handshake_error",
+                            FT_UINT8, BASE_DEC,
+                            VALS(handshake_error_names), 0x0,
                             NULL, HFILL }
             },
     };
@@ -423,12 +448,13 @@ dissect_reply_handshake_begin(tvbuff_t *tvb, gint offset, proto_tree *tree) {
     return offset;
 }
 
-/*
+
 static guint
 dissect_reply_handshake_error(tvbuff_t *tvb, gint offset, proto_tree *tree) {
-
+    proto_tree_add_item(tree, hf_ssp21_handshake_error, tvb, offset, 1, ENC_BIG_ENDIAN);
+    return offset + 1;
 }
-*/
+
 
 static guint
 dissect_session_data(tvbuff_t *tvb, gint offset, proto_tree *tree) {
@@ -462,28 +488,17 @@ dissect_ssp21(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree _U_, void *dat
     // determine the function code and call function-specific subroutine
     switch(packet_type) {
         case(SSP21_FUNCTION_REQUEST_HANDSHAKE_BEGIN):
-            offset += dissect_request_handshake_begin(tvb, offset, ssp21_tree);
-            break;
+            return dissect_request_handshake_begin(tvb, offset, ssp21_tree);
         case(SSP21_FUNCTION_REPLY_HANDSHAKE_BEGIN):
-            offset += dissect_reply_handshake_begin(tvb, offset, ssp21_tree);
-            break;
-
-            /*
+            return dissect_reply_handshake_begin(tvb, offset, ssp21_tree);
         case(SSP21_FUNCTION_REPLY_HANDSHAKE_ERROR):
-            offset += dissect_reply_handshake_error(tvb, offset, ssp21_tree);
-            break;
-             */
-
+            return dissect_reply_handshake_error(tvb, offset, ssp21_tree);
         case(SSP21_FUNCTION_SESSION_DATA):
-            offset += dissect_session_data(tvb, offset, ssp21_tree);
-            break;
+            return dissect_session_data(tvb, offset, ssp21_tree);
         default:
             // TODO - ERROR on unknown function
-            break;
-
+            return offset;
     }
-
-    return offset;
 }
 
 void
