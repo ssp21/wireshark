@@ -89,12 +89,15 @@ static int hf_ssp21_max_session_duration = -1;
 static int hf_ssp21_handshake_mode = -1;
 static int hf_ssp21_mode_ephemeral = -1;
 static int hf_ssp21_mode_data = -1;
+static int hf_ssp21_length = -1;
+static int hf_ssp21_bytes = -1;
 
 
 /// ------- subtree handles -------------------
 static gint ett_ssp21 = -1;
 static gint ett_ssp21_crypto_spec = -1;
 static gint ett_ssp21_session_constraints = -1;
+static gint ett_ssp21_seq_of_bytes = -1;
 
 void
 proto_register_ssp21(void)
@@ -180,10 +183,22 @@ proto_register_ssp21(void)
                             NULL, HFILL }
             },
             { &hf_ssp21_mode_data,
-                    { "Mode Ephemeral", "ssp21.mode_ephemeral",
+                    { "Mode Data", "ssp21.mode_data",
                             FT_NONE, BASE_NONE,
                             NULL, 0x0,
                             NULL, HFILL }
+            },
+            { &hf_ssp21_length,
+                        { "Length", "ssp21.length",
+                                FT_UINT32, BASE_DEC,
+                          NULL, 0x0,
+                          NULL, HFILL }
+            },
+            { &hf_ssp21_bytes,
+                        { "Bytes", "ssp21.bytes",
+                                FT_BYTES, SEP_COLON,
+                          NULL, 0x0,
+                          NULL, HFILL }
             },
     };
 
@@ -192,6 +207,7 @@ proto_register_ssp21(void)
         &ett_ssp21,
         &ett_ssp21_crypto_spec,
         &ett_ssp21_session_constraints,
+        &ett_ssp21_seq_of_bytes,
     };
 
     proto_ssp21 = proto_register_protocol (
@@ -205,40 +221,67 @@ proto_register_ssp21(void)
 }
 
 static guint
-dissect_crypto_spec(tvbuff_t *tvb, gint offset, proto_tree *tree) {
+dissect_crypto_spec(tvbuff_t *tvb, gint offset, proto_tree *parent) {
 
-    proto_item *ti = proto_tree_add_item(tree, hf_ssp21_crypto_suite, tvb, offset, 5, ENC_NA);
-    proto_tree *subtree = proto_item_add_subtree(ti, ett_ssp21_crypto_spec);
+    proto_item *ti = proto_tree_add_item(parent, hf_ssp21_crypto_suite, tvb, offset, 5, ENC_NA);
+    proto_tree *tree = proto_item_add_subtree(ti, ett_ssp21_crypto_spec);
 
-    proto_tree_add_item(subtree, hf_ssp21_handshake_ephemeral, tvb, offset, 1, ENC_BIG_ENDIAN);
+    proto_tree_add_item(tree, hf_ssp21_handshake_ephemeral, tvb, offset, 1, ENC_BIG_ENDIAN);
     offset += 1;
 
-    proto_tree_add_item(subtree, hf_ssp21_handshake_hash, tvb, offset, 1, ENC_BIG_ENDIAN);
+    proto_tree_add_item(tree, hf_ssp21_handshake_hash, tvb, offset, 1, ENC_BIG_ENDIAN);
     offset += 1;
 
-    proto_tree_add_item(subtree, hf_ssp21_handshake_kdf, tvb, offset, 1, ENC_BIG_ENDIAN);
+    proto_tree_add_item(tree, hf_ssp21_handshake_kdf, tvb, offset, 1, ENC_BIG_ENDIAN);
     offset += 1;
 
-    proto_tree_add_item(subtree, hf_ssp21_session_nonce_mode, tvb, offset, 1, ENC_BIG_ENDIAN);
+    proto_tree_add_item(tree, hf_ssp21_session_nonce_mode, tvb, offset, 1, ENC_BIG_ENDIAN);
     offset += 1;
 
-    proto_tree_add_item(subtree, hf_ssp21_session_crypto_mode, tvb, offset, 1, ENC_BIG_ENDIAN);
+    proto_tree_add_item(tree, hf_ssp21_session_crypto_mode, tvb, offset, 1, ENC_BIG_ENDIAN);
     offset += 1;
 
     return offset;
 }
 
 static guint
-dissect_session_constraints(tvbuff_t *tvb, gint offset, proto_tree *tree) {
+dissect_session_constraints(tvbuff_t *tvb, gint offset, proto_tree *parent) {
 
-    proto_item *ti = proto_tree_add_item(tree, hf_ssp21_session_constraints, tvb, offset, 6, ENC_NA);
-    proto_tree *subtree = proto_item_add_subtree(ti, ett_ssp21_session_constraints);
+    proto_item *ti = proto_tree_add_item(parent, hf_ssp21_session_constraints, tvb, offset, 6, ENC_NA);
+    proto_tree *tree = proto_item_add_subtree(ti, ett_ssp21_session_constraints);
 
-    proto_tree_add_item(subtree, hf_ssp21_max_nonce, tvb, offset, 2, ENC_BIG_ENDIAN);
+    proto_tree_add_item(tree, hf_ssp21_max_nonce, tvb, offset, 2, ENC_BIG_ENDIAN);
     offset += 2;
 
-    proto_tree_add_item(subtree, hf_ssp21_max_session_duration, tvb, offset, 4, ENC_BIG_ENDIAN);
+    proto_tree_add_item(tree, hf_ssp21_max_session_duration, tvb, offset, 4, ENC_BIG_ENDIAN);
     offset += 4;
+
+    return offset;
+}
+
+static gint
+dissect_seq_of_bytes(tvbuff_t *tvb, gint offset, int hf_field_handle, proto_tree *parent) {
+    const gint start = offset;
+
+    // first thing to do is attempt to read the length, b/c we need that to determine other lengths
+    const guint8 first_byte = tvb_get_guint8(tvb, offset);
+    offset += 1;
+
+    if(!(first_byte & 0x80u)) {
+
+        // single byte, so the length is just lower 7-bits
+        const guint length_of_blob = first_byte & 0x7Fu;
+
+
+        printf("length: %u \n", length_of_blob);
+
+        proto_item *ti = proto_tree_add_item(parent, hf_field_handle, tvb, start, length_of_blob + 1, ENC_NA);
+        proto_tree *tree = proto_item_add_subtree(ti, ett_ssp21_session_constraints);
+
+        proto_tree_add_item(tree, hf_ssp21_length, tvb, start, 1, ENC_BIG_ENDIAN);
+        proto_tree_add_item(tree, hf_ssp21_bytes, tvb, offset, length_of_blob, ENC_NA);
+        offset += length_of_blob;
+    }
 
     return offset;
 }
@@ -256,8 +299,10 @@ dissect_request_handshake_begin(tvbuff_t *tvb, gint offset, proto_tree *tree) {
     // handshake mode
     proto_tree_add_item(tree, hf_ssp21_handshake_mode, tvb, offset, 1, ENC_BIG_ENDIAN);
     offset += 1;
-}
 
+    offset = dissect_seq_of_bytes(tvb, offset, hf_ssp21_mode_ephemeral, tree);
+    offset = dissect_seq_of_bytes(tvb, offset, hf_ssp21_mode_data, tree);
+}
 
 
 /*
