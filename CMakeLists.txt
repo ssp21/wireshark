@@ -1446,7 +1446,6 @@ if(ENABLE_PLUGINS)
 		plugins/epan/mate
 		plugins/epan/opcua
 		plugins/epan/profinet
-		plugins/epan/ssp21
 		plugins/epan/stats_tree
 		plugins/epan/transum
 		plugins/epan/unistim
