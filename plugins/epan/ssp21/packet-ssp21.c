@@ -88,9 +88,8 @@ static int proto_ssp21 = -1;
 
 /// ------- field handles -------------------
 static int hf_ssp21_function = -1;
-static int hf_ssp21_version = -1;
 
-// crypto suite stuff
+// crypto suite
 static int hf_ssp21_crypto_suite = -1;
 static int hf_ssp21_handshake_ephemeral = -1;
 static int hf_ssp21_handshake_hash = -1;
@@ -98,24 +97,29 @@ static int hf_ssp21_handshake_kdf = -1;
 static int hf_ssp21_session_nonce_mode = -1;
 static int hf_ssp21_session_crypto_mode = -1;
 
-// session constraint stuff
+// session constraint
 static int hf_ssp21_session_constraints = -1;
 static int hf_ssp21_max_nonce = -1;
 static int hf_ssp21_max_session_duration = -1;
 
-// handshake mode stuff
+// version
+static int hf_ssp21_version = -1;
+static int hf_ssp21_major_version = -1;
+static int hf_ssp21_minor_version = -1;
+
+// handshake mode
 static int hf_ssp21_handshake_mode = -1;
 static int hf_ssp21_mode_ephemeral = -1;
 static int hf_ssp21_mode_data = -1;
 
-// session data stuff
+// session data
 static int hf_ssp21_auth_metadata = -1;
 static int hf_ssp21_nonce = -1;
 static int hf_ssp21_valid_until_ms = -1;
 static int hf_ssp21_user_data = -1;
 static int hf_ssp21_auth_tag = -1;
 
-// stuff related to variable length fields
+// variable length fields
 static int hf_count_of_length_bytes = -1;
 static int hf_ssp21_length = -1;
 static int hf_ssp21_bytes = -1;
@@ -125,6 +129,7 @@ static int hf_ssp21_handshake_error = -1;
 
 /// ------- subtree handles -------------------
 static gint ett_ssp21 = -1;
+static gint ett_ssp21_version = -1;
 static gint ett_ssp21_crypto_spec = -1;
 static gint ett_ssp21_session_constraints = -1;
 static gint ett_ssp21_seq_of_bytes = -1;
@@ -143,6 +148,18 @@ proto_register_ssp21(void)
             },
             { &hf_ssp21_version,
                     { "Version", "ssp21.version",
+                            FT_NONE, BASE_NONE,
+                            NULL, 0x0,
+                            NULL, HFILL }
+            },
+            { &hf_ssp21_major_version,
+                    { "Major Version", "ssp21.version.major",
+                            FT_UINT16, BASE_DEC,
+                            NULL, 0x0,
+                            NULL, HFILL }
+            },
+            { &hf_ssp21_minor_version,
+                    { "Minor Version", "ssp21.version.minor",
                             FT_UINT16, BASE_DEC,
                             NULL, 0x0,
                             NULL, HFILL }
@@ -278,6 +295,7 @@ proto_register_ssp21(void)
     // subtree array
     static gint *ett[] = {
         &ett_ssp21,
+        &ett_ssp21_version,
         &ett_ssp21_crypto_spec,
         &ett_ssp21_session_constraints,
         &ett_ssp21_seq_of_bytes,
@@ -292,6 +310,20 @@ proto_register_ssp21(void)
 
     proto_register_field_array(proto_ssp21, hf, array_length(hf));
     proto_register_subtree_array(ett, array_length(ett));
+}
+
+static guint
+dissect_version(tvbuff_t *tvb, gint offset, proto_tree *parent) {
+    proto_item *ti = proto_tree_add_item(parent, hf_ssp21_version, tvb, offset, 4, ENC_NA);
+    proto_tree *tree = proto_item_add_subtree(ti, ett_ssp21_version);
+
+    proto_tree_add_item(tree, hf_ssp21_major_version, tvb, offset, 2, ENC_BIG_ENDIAN);
+    offset += 2;
+
+    proto_tree_add_item(tree, hf_ssp21_minor_version, tvb, offset, 2, ENC_BIG_ENDIAN);
+    offset += 2;
+
+    return offset;
 }
 
 static guint
@@ -424,10 +456,7 @@ dissect_seq_of_bytes(tvbuff_t *tvb, gint offset, int hf_field_handle, proto_tree
 static guint
 dissect_request_handshake_begin(tvbuff_t *tvb, gint offset, proto_tree *tree) {
 
-    // add the version to the tree
-    proto_tree_add_item(tree, hf_ssp21_version, tvb, offset, 2, ENC_BIG_ENDIAN);
-    offset += 2;
-
+    offset = dissect_version(tvb, offset, tree);
     offset = dissect_crypto_spec(tvb, offset, tree);
     offset = dissect_session_constraints(tvb, offset, tree);
 
@@ -443,6 +472,7 @@ dissect_request_handshake_begin(tvbuff_t *tvb, gint offset, proto_tree *tree) {
 
 static guint
 dissect_reply_handshake_begin(tvbuff_t *tvb, gint offset, proto_tree *tree) {
+    offset = dissect_version(tvb, offset, tree);
     offset = dissect_seq_of_bytes(tvb, offset, hf_ssp21_mode_ephemeral, tree);
     offset = dissect_seq_of_bytes(tvb, offset, hf_ssp21_mode_data, tree);
     return offset;
@@ -451,8 +481,10 @@ dissect_reply_handshake_begin(tvbuff_t *tvb, gint offset, proto_tree *tree) {
 
 static guint
 dissect_reply_handshake_error(tvbuff_t *tvb, gint offset, proto_tree *tree) {
+    offset = dissect_version(tvb, offset, tree);
     proto_tree_add_item(tree, hf_ssp21_handshake_error, tvb, offset, 1, ENC_BIG_ENDIAN);
-    return offset + 1;
+    offset += 1;
+    return offset;
 }
 
 
